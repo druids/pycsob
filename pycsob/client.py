@@ -45,7 +45,7 @@ class CsobClient(object):
         """
         self.merchant_id = merchant_id
         self.base_url = base_url
-        self.key = self._get_key(private_key)
+        self.key = private_key
         self.pubkey = self._get_key(csob_pub_key)
 
         session = Session()
