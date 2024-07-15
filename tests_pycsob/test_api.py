@@ -8,6 +8,7 @@ from datetime import datetime
 from freezegun import freeze_time
 from unittest import TestCase
 from requests.exceptions import HTTPError, ConnectionError
+from pycsob.utils import convert_keys_to_camel_case, to_camel_case
 
 from pycsob import conf, utils
 from pycsob.client import CsobClient
@@ -25,7 +26,7 @@ class CsobClientTests(TestCase):
         self.key = open(KEY_PATH).read()
         self.c = CsobClient(merchant_id='MERCHANT',
                             base_url=BASE_URL,
-                            private_key=KEY_PATH,
+                            private_key=self.key,
                             csob_pub_key=KEY_PATH)
 
     def test_client_init_can_take_key_string(self):
@@ -33,14 +34,6 @@ class CsobClientTests(TestCase):
                             base_url=BASE_URL,
                             private_key=self.key,
                             csob_pub_key=self.key)
-        assert client.key == self.key
-        assert client.pubkey == self.key
-
-    def test_client_init_can_take_key_path(self):
-        client = CsobClient(merchant_id='MERCHANT',
-                            base_url=BASE_URL,
-                            private_key=KEY_PATH,
-                            csob_pub_key=KEY_PATH)
         assert client.key == self.key
         assert client.pubkey == self.key
 
@@ -98,15 +91,67 @@ class CsobClientTests(TestCase):
             ('dttm', utils.dttm()),
             ('resultCode', conf.RETURN_CODE_OK),
             ('resultMessage', 'OK'),
-            ('paymentStatus', 1)
+            ('paymentStatus', 1),
         ))
         responses.add(responses.POST, utils.mk_url(BASE_URL, '/payment/init'), body=json.dumps(resp_payload),
                       status=200)
-        out = self.c.payment_init(order_no=666, total_amount='66600', return_url='http://example.com',
-                                  description='Nějaký popis').payload
+        response = self.c.payment_init(
+            order_no=666,
+            total_amount='66600',
+            return_url='http://example.com',
+            description='Nějaký popis',
+            customer_data={
+                'name': "Jiri Novak",
+                'email': "j@novak.cz",
+                'mobile_phone': "+420.602123123",
+            },
+        )
 
-        assert out['paymentStatus'] == conf.PAYMENT_STATUS_INIT
-        assert out['resultCode'] == conf.RETURN_CODE_OK
+        request_body = json.loads(response.request.body)
+        assert request_body['customer'] == {
+            'name': "Jiri Novak",
+            'email': "j@novak.cz",
+            'mobilePhone': "+420.602123123",
+        }
+        payload = response.payload
+        assert payload['paymentStatus'] == conf.PAYMENT_STATUS_INIT
+        assert payload['resultCode'] == conf.RETURN_CODE_OK
+        assert len(responses.calls) == 1
+
+    @freeze_time(datetime.now())
+    @responses.activate
+    def test_onelick_init_success(self):
+        resp_payload = utils.mk_payload(self.key, pairs=(
+            ('payId', PAY_ID),
+            ('dttm', utils.dttm()),
+            ('resultCode', conf.RETURN_CODE_OK),
+            ('resultMessage', 'OK'),
+            ('paymentStatus', 1),
+        ))
+        responses.add(
+            responses.POST, utils.mk_url(BASE_URL, '/oneclick/init'), body=json.dumps(resp_payload), status=200
+        )
+        response = self.c.oneclick_init(
+            orig_pay_id=PAY_ID,
+            order_no=666,
+            total_amount='66600',
+            return_url='http://example.com',
+            customer_data={
+                'name': "Jiri Novak",
+                'email': "j@novak.cz",
+                'mobile_phone': "+420.602123123",
+            },
+        )
+
+        request_body = json.loads(response.request.body)
+        assert request_body['customer'] == {
+            'name': "Jiri Novak",
+            'email': "j@novak.cz",
+            'mobilePhone': "+420.602123123",
+        }
+        payload = response.payload
+        assert payload['paymentStatus'] == conf.PAYMENT_STATUS_INIT
+        assert payload['resultCode'] == conf.RETURN_CODE_OK
         assert len(responses.calls) == 1
 
     @freeze_time(datetime.now())
@@ -129,12 +174,22 @@ class CsobClientTests(TestCase):
             ('dttm', utils.dttm()),
             ('resultCode', conf.RETURN_CODE_PARAM_INVALID),
             ('resultMessage', "Invalid 'cart' amounts, does not sum to totalAmount"),
-            ('paymentStatus', conf.PAYMENT_STATUS_REJECTED)
+            ('paymentStatus', conf.PAYMENT_STATUS_REJECTED),
         ))
         responses.add(responses.POST, utils.mk_url(BASE_URL, '/payment/init'), body=json.dumps(resp_payload),
                       status=200)
-        out = self.c.payment_init(order_no=666, total_amount='2200000', return_url='http://',
-                                  description='X', cart=cart).payload
+        out = self.c.payment_init(
+            order_no=666,
+            total_amount='2200000',
+            return_url='http://',
+            description='X',
+            cart=cart,
+            customer_data={
+                'name': "Jiri Novak",
+                'email': "j@novak.cz",
+                'mobile_phone': "+420.602123123",
+            },
+        ).payload
 
         assert out['paymentStatus'] == conf.PAYMENT_STATUS_REJECTED
         assert out['resultCode'] == conf.RETURN_CODE_PARAM_INVALID
@@ -218,3 +273,48 @@ class CsobClientTests(TestCase):
         with pytest.raises(CsobBaseException) as excinfo:
             self.c.echo(method='POST')
         assert 'Can\'t connect' in str(excinfo.value)
+
+
+class CsobUtilsTests(TestCase):
+    def test_to_camel_case_should_convert_string_to_camel_case(self):
+        assert to_camel_case(None) == None
+        assert to_camel_case("") == ""
+        assert to_camel_case("THIS_IS_SNAKE_CASE") == "thisIsSnakeCase"
+        assert to_camel_case("thisIsSnakeCase") == "thisIsSnakeCase"
+
+    def test_convert_keys_to_camel_case_should_convert_dict_keys_to_camel_case(self):
+        customer_data = {
+            "name": "Petr Novak",
+            "mobile_phone": "+420.735293123",
+            "addressInfo": {
+                "address_count": 2,
+                "addresses": [
+                    {
+                        "street_address": "Malkovskeho",
+                        "types": [],
+                    },
+                    {
+                        "street_address": "Holesovice",
+                        "types": ["billing"],
+                    },
+                ]
+            },
+        }
+
+        assert convert_keys_to_camel_case(customer_data) == {
+            "name": "Petr Novak",
+            "mobilePhone": "+420.735293123",
+            "addressInfo": {
+                "addressCount": 2,
+                "addresses": [
+                    {
+                        "streetAddress": "Malkovskeho",
+                        "types": [],
+                    },
+                    {
+                        "streetAddress": "Holesovice",
+                        "types": ["billing"],
+                    },
+                ]
+            },
+        }

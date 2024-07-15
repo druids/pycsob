@@ -1,4 +1,5 @@
 import sys
+from typing import Any
 import re
 from base64 import b64encode, b64decode
 from collections import OrderedDict
@@ -121,3 +122,31 @@ def get_card_provider(long_masked_number):
         if rx.match(long_masked_number[:6]):
             return provider_id, conf.CARD_PROVIDERS[provider_id]
     return None, None
+
+
+def to_camel_case(value):
+    """
+    If the value is not None, convert the value from snake_case to camelCase format. If the value is not in snake_case
+    format, return the original value.
+    """
+
+    if value is None:
+        return value
+
+    first_word, *other_words = value.split('_')
+    return "".join([first_word.lower(), *map(str.title, other_words)]) if other_words else first_word
+
+
+def convert_keys_to_camel_case(data):
+    """
+    Convert all dictionary keys and nested dictionary keys from snake_case to camelCase format.
+    """
+
+    if not data:
+        return data
+    if isinstance(data, list):
+        return [convert_keys_to_camel_case(value) if isinstance(value, (dict, list)) else value for value in data]
+    return {
+       to_camel_case(key): convert_keys_to_camel_case(value) if isinstance(value, (dict, list)) else value
+       for key, value in data.items()
+    }

@@ -40,7 +40,7 @@ class CsobClient(object):
 
         :param merchant_id: Your Merchant ID (you can find it in POSMerchant)
         :param base_url: Base API url development / production
-        :param private_key: Path to generated private key file, or its contents
+        :param private_key: CSOB private key string
         :param csob_pub_key: Path to CSOB public key file, or its contents
         """
         self.merchant_id = merchant_id
@@ -65,9 +65,9 @@ class CsobClient(object):
         except FileNotFoundError:
             return value
 
-    def payment_init(self, order_no, total_amount, return_url, description, merchant_data=None, cart=None,
-                     customer_id=None, currency='CZK', language='CZ', close_payment=True,
-                     return_method='POST', pay_operation='payment', ttl_sec=600,
+    def payment_init(self, order_no, total_amount, return_url, description, customer_data,
+                     merchant_data=None, cart=None, customer_id=None, currency='CZK', language='CZ',
+                     close_payment=True, return_method='POST', pay_operation='payment', ttl_sec=600,
                      logo_version=None, color_scheme_version=None):
         """
         Initialize transaction, sum of cart items must be equal to total amount
@@ -93,6 +93,7 @@ class CsobClient(object):
         :param return_url: URL to be returned to from payment gateway
         :param cart: items in cart, currently min one item, max two as mentioned in CSOB spec
         :param description: order description
+        :param customer_data: dict with customer name and either email or phone
         :param customer_id: optional customer id
         :param language: supported languages: 'CZ', 'EN', 'DE', 'SK', 'HU', 'IT', 'JP', 'PL', 'PT', 'RO', 'RU', 'SK', 'ES', 'TR' or 'VN'
         :param currency: supported currencies: 'CZK', 'EUR', 'USD', 'GBP'
@@ -123,6 +124,7 @@ class CsobClient(object):
             ('payMethod', 'card'),
             ('totalAmount', total_amount),
             ('currency', currency),
+            ('customer', utils.convert_keys_to_camel_case(customer_data)),
             ('closePayment', close_payment),
             ('returnUrl', return_url),
             ('returnMethod', return_method),
@@ -218,7 +220,7 @@ class CsobClient(object):
         r = self._client.get(url)
         return utils.validate_response(r, self.pubkey)
 
-    def oneclick_init(self, orig_pay_id, order_no, total_amount, currency='CZK', description=None,
+    def oneclick_init(self, orig_pay_id, order_no, total_amount, customer_data, currency='CZK', description=None,
                       return_url='http://localhost', return_method='GET', client_initiated=False):
         """
         Initialize one-click payment. Before this, you need to call payment_init(..., pay_operation='oneclickPayment')
@@ -229,6 +231,7 @@ class CsobClient(object):
             ('merchantId', self.merchant_id),
             ('origPayId', orig_pay_id),
             ('orderNo', str(order_no)),
+            ('customer', utils.convert_keys_to_camel_case(customer_data)),
             ('dttm', utils.dttm()),
             ('totalAmount', total_amount),
             ('currency', currency),
